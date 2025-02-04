@@ -70,8 +70,12 @@ class VLMPrompter:
     def write_file(file_path, content):
         """Writes content to a file."""
         try:
-            with open(file_path, 'w') as file:
-                file.write(content.strip())
+            if type(content) == dict:
+                with open(file_path.replace('txt', json), 'w') as file:
+                    json.dump(content, file, indent=4)
+            else:
+                with open(file_path, 'w') as file:
+                    file.write(content.strip())
         except Exception as e:
             print(f"Error writing to file {file_path}: {e}")
 
@@ -83,7 +87,7 @@ class VLMPrompter:
         if images:
             self.images = [img for img in images if os.path.exists(img)]
 
-        files = ["plan_execution.txt", scene_graph, hierarchical_summary, "failure_skill.txt", "failure_reason.txt"]
+        files = ["plan.txt", scene_graph, hierarchical_summary, "failure_skill.txt", "failure_reason.txt"]
         self.plan_execution, self.scene_graph, self.hierarchical_summary, \
             self.failure_skill, self.failure_reason = [self.read_file(os.path.join(self.task_dir, f)) if os.path.exists(os.path.join(self.task_dir, f)) else None for f in files]
 
