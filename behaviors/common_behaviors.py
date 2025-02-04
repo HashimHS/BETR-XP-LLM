@@ -361,8 +361,8 @@ class ActionBehavior(Behavior):
     def initialise(self) -> None:
         self.counter = 0
         self.state = pt.common.Status.RUNNING
-        self.precondition_check()
         self.hierarchical_summary()
+        self.precondition_check()
 
     @staticmethod
     def parse_parameters(node_descriptor):
