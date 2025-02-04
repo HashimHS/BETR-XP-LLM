@@ -144,7 +144,7 @@ class SceneGraph(BaseSceneGraph):
                    relation = 'at'
                    
         if relation is not None:
-            self.edges[(target_object, relative_object)] = GraphEdge(target_object, relative_object, relation)
+            self.edges[(new_node.name, node.name)] = GraphEdge(new_node, node, relation)
 
 
 class WorldInterface(BaseWorldInterface):
@@ -183,6 +183,8 @@ class WorldInterface(BaseWorldInterface):
         self.object_dict = {}
         self.object_positions = {}
         self.object_position_known = {}
+        self.scene_graph.object_position_known = self.object_position_known
+        self.scene_graph.object_positions = self.object_positions
         self.object_upright = {}
         self.object_opened = {}
         self.object_unlocked = {}
@@ -190,16 +192,16 @@ class WorldInterface(BaseWorldInterface):
         self.scene_changes = []
         self.error_message = ''
         self.failed_behavior = ''
-        
-        for obj in self.controller.last_event.metadata["objects"]:
-            self.update_scene_graph(obj, self.controller.last_event)
-        # self.get_feedback()
 
         for obj in known_objects:
             object_id = self.get_id(obj)
             self.object_dict[obj] = object_id
             self.object_position_known[object_id] = True
-    
+        
+        for obj in self.controller.last_event.metadata["objects"]:
+            self.update_scene_graph(obj, self.controller.last_event)
+        self.update_scene_graph_file() 
+           
     def get_updated_image(self , file_path=None):
         """ Returns the current image of the last event"""
         if file_path is None:
@@ -266,16 +268,19 @@ class WorldInterface(BaseWorldInterface):
         pre_edges = copy.deepcopy(self.scene_graph.edges)
         pre_nodes = self.scene_graph_nodes
         for obj in event.metadata['objects']:
-            self.update_scene_graph(obj, event) 
             if obj['pickupable']:
-                self.graspable_objects.append(obj['objectId'])
+                if obj['objectId'] not in self.graspable_objects:
+                    self.graspable_objects.append(obj['objectId'])
                 if obj['isPickedUp']:
                     self.grasped_object = obj['objectId']
-                    self.scene_graph_nodes.append(obj['objectId'])
                     self.scene_graph.edges[(obj['objectId'],"robot_gripper")] = GraphEdge(obj['objectId'], "robot_gripper", edge_type="in")
-                    self.held_prev.append(obj['objectId'])
+                    if obj['objectId'] not in self.scene_graph_nodes:
+                        self.scene_graph_nodes.append(obj['objectId'])
+                    if obj['objectId'] not in self.held_prev:
+                        self.held_prev.append(obj['objectId'])
             if obj['moveable']:
-                self.movable_objects.append(obj['objectId'])                
+                if obj['objectId'] not in self.movable_objects:
+                    self.movable_objects.append(obj['objectId'])                
             if obj['toggleable']:
                 self.object_unlocked[obj['objectId']] = obj['isToggled']
             if obj['openable']:
@@ -284,11 +289,11 @@ class WorldInterface(BaseWorldInterface):
             #     self.object_upright[obj['objectId']] = True
             # else:
             #     self.object_upright[obj['objectId']] = False
-        
+            self.update_scene_graph(obj, event)         
 
         for edge in self.scene_graph.edges.keys():
             if edge not in pre_edges.keys() or self.scene_graph.edges[edge].edge_type != pre_edges[edge].edge_type:
-                if edge[0] in pre_nodes or edge[1] in pre_nodes:
+                if edge[0] in pre_nodes or edge[1] in pre_nodes or edge[0] in self.held_prev:
                     self.scene_changes.append(self.scene_graph.edges[edge])
 
         self.update_scene_graph_file()
@@ -302,8 +307,6 @@ class WorldInterface(BaseWorldInterface):
                 self.scene_graph_nodes.append(obj['objectId'])
                 self.object_position_known[obj['objectId']] = True
                 self.object_positions[obj['objectId']] = self.dict_to_pos(obj['position'])
-                self.scene_graph.object_position_known = self.object_position_known
-                self.scene_graph.object_positions = self.object_positions
                 node = gen_node(obj, event, obj['objectId'] in self.held_prev) # Reflects Scene Graph
                 # node = GraphNode(obj['name'], object_id=obj['objectId']) # BETR-XP-LLM Scene Graph
                 self.scene_graph.add_node_wo_edge(node)
@@ -311,17 +314,18 @@ class WorldInterface(BaseWorldInterface):
                     self.scene_graph.add_node(node)
 
             elif obj['objectId'] in self.object_position_known.keys():
-                self.scene_graph_nodes.append(obj['objectId'])
                 if self.object_position_known[obj['objectId']] == True:
+                    # self.scene_graph_nodes.append(obj['objectId'])
                     self.object_positions[obj['objectId']] = self.dict_to_pos(obj['position'])
             else:
                 self.object_position_known[obj['objectId']] = False
+
         elif obj['visible']:
             if not self.object_position_known[obj['objectId']]:
-                self.object_positions[obj['objectId']] = self.dict_to_pos(obj['position'])
                 self.object_position_known[obj['objectId']] = True
+                self.object_positions[obj['objectId']] = self.dict_to_pos(obj['position'])
 
-            if self.calc_distance3d(obj['objectId'], self.dict_to_pos(obj['position'])) > 0.05:
+            if self.calc_distance3d(obj['objectId'], self.dict_to_pos(obj['position'])) > 0.01 and not obj["isPickedUp"]: # Object moved
                 self.object_positions[obj['objectId']] = self.dict_to_pos(obj['position'])
 
                 remove_list = []
@@ -333,15 +337,14 @@ class WorldInterface(BaseWorldInterface):
 
                 node = gen_node(obj, event, obj['objectId'] in self.held_prev) # Reflects Scene Graph
                 # node = GraphNode(obj['name'], object_id=obj['objectId']) # BETR-XP-LLM Scene Graph
-                self.scene_graph.add_node_wo_edge(node)
                 if node is not None:
                     self.scene_graph.add_node(node)
-                
-        elif self.object_position_known[obj['objectId']] == False:
-            self.scene_graph_nodes.remove(obj['objectId'])
-            for edge in self.scene_graph.edges.keys():
-                if obj['objectId'] in edge:
-                    self.scene_graph.edges.pop(edge)
+                    
+        # elif self.object_position_known[obj['objectId']] == False:
+        #     self.scene_graph_nodes.remove(obj['objectId'])
+        #     for edge in self.scene_graph.edges.keys():
+        #         if obj['objectId'] in edge:
+        #             self.scene_graph.edges.pop(edge)
 
     def calc_distance3d(self, target_object, position):
         """ Calculates the distance between target object and given position """
@@ -385,6 +388,7 @@ class WorldInterface(BaseWorldInterface):
             return False
 
     def object_at(self, target_object, relation, relative_object):
+        """ Checks if object is at a specific relation to another object """
         if (target_object, relative_object) in self.scene_graph.edges.keys():
             return relation == self.scene_graph.edges[(target_object, relative_object)].edge_type
         else:
@@ -468,7 +472,8 @@ class WorldInterface(BaseWorldInterface):
         receptacle_obj = self.get_obj(receptacle)
         target_obj = self.get_obj(target_object)
         target_obj_type = target_obj['objectType']
-        src_obj = self.controller.last_event.metadata['arm']['heldObjects'][0] if len(self.controller.last_event.metadata['arm']['heldObjects']) > 0 else None
+        # src_obj = self.controller.last_event.metadata['arm']['heldObjects'][0] if len(self.controller.last_event.metadata['arm']['heldObjects']) > 0 else None
+        src_obj = self.get_obj(self.grasped_object)
 
         if len(receptacle_obj['receptacleObjectIds']) > 0:
             print("[ERROR] Receptacle is already occupied")
@@ -519,7 +524,7 @@ class WorldInterface(BaseWorldInterface):
                 else:
                     print("thor put_obj did not work, try place obj in small recetacle primitive")
                     if target_obj_type not in ["CoffeeMachine", "Microwave"]:
-                        place_obj_in_small_receptacle(receptacle_pos)
+                        place_obj_in_small_receptacle(self, receptacle_pos)
 
         return self.controller.step(action="Done")
 
