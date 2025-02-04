@@ -44,6 +44,7 @@ from behaviors.common_behaviors import ActionBehavior, RandomSelector, VLMPrompt
 from behaviors.behavior_lists import BehaviorLists
 from planner.constraints_identification import contains_conflicting
 from interfaces.py_trees_interface import PyTree, PyTreeParameters
+import time
 import json
 import os
 
@@ -331,13 +332,16 @@ def plan(
         for goal in goals:
             tree.add_child(goal)
 
-    for i in range(20):
+    for i in range(200):
         if not handle_priority(tree, behaviors):
             break
-        world_interface.get_feedback()
+        # world_interface.get_feedback()
         tree.tick_once()
+        time.sleep(0.5)
         print("Tick: ", i)
         print(pt.display.unicode_tree(root=tree, show_status=True))
+        with open(os.path.join(vlm.task_dir, "plan.txt"), "w") as f:
+            f.write(pt.display.unicode_tree(root=tree, show_status=False))
         if tree.status is pt.common.Status.FAILURE:
             expand_tree(tree, behaviors, world_interface, vlm)
 
