@@ -379,3 +379,19 @@ def plan(
     PyTree(py_tree.bt.bt[:], py_tree_parameters, None).save_fig("", "Planned bt")
 
     return py_tree.bt.bt, tree
+
+def holding_monitoring(
+    skill: Any = None
+):
+    """
+    Monitor the holding conditions of a skill.
+    If a holding condition fails, it will be corrected.
+    """
+
+    while skill.state == pt.common.Status.RUNNING:
+        skill.check_for_success()
+        if skill.state == pt.common.Status.SUCCESS:
+            break
+        for condition in skill.holdingconditions:
+            if condition.state == pt.common.Status.FAILURE:
+                condition.correct(skill)

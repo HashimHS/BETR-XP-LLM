@@ -46,6 +46,8 @@ import py_trees as pt
 import os
 import time
 import cv2
+import behaviors
+from planner.planner import holding_monitoring
 
 class ParameterTypes(IntEnum):
     """Define the parameter types."""
@@ -350,12 +352,13 @@ class ActionBehavior(Behavior):
     """
     Class template for action behaviors
     """
-    def __init__(self, name, parameters, world_interface, preconditions, postconditions, vlm_prompter: VLMPrompter, max_ticks=50, verbose=False):
+    def __init__(self, name, parameters, world_interface, preconditions, postconditions, vlm_prompter: VLMPrompter, max_ticks=50, verbose=False, holdingconditions=[]):
         self.state = None
         self.counter = 0
         self.max_ticks = max_ticks
         self.preconditions = preconditions
         self.postconditions = postconditions
+        self.holdingconditions = holdingconditions
         self.vlm_prompter = vlm_prompter 
         self.verbose = verbose
         super().__init__(name, parameters, world_interface)
@@ -422,8 +425,9 @@ class ActionBehavior(Behavior):
                 self.failure()
             else:
                 self.execute()
-                while not self.world_interface.has_stopped():
-                    time.sleep(0.5)
+                holding_monitoring(self)
+                # while not self.world_interface.has_stopped():
+                #     time.sleep(0.5)
                 self.world_interface.get_feedback()
                 rgb_img, depth_img, _ = self.world_interface.get_updated_image()
                 if self.vlm_prompter.vlm_run:
@@ -491,7 +495,12 @@ class ActionBehavior(Behavior):
         """
         Check if the behavior was successful.
         """
-        pass
+        # pass
+        for condition in self.postconditions:
+            if condition.state == pt.common.Status.FAILURE:
+                return False
+        self.success()
+        return True
 
     def success(self) -> None:
         """Set state success."""
